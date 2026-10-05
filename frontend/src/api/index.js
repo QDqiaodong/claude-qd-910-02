@@ -28,6 +28,7 @@ const berth = {
   update: (id, data) => call(http.put(`/berth/${id}`, data)),
   occupy: (id, vesselId) => call(http.post(`/berth/${id}/occupy?vesselId=${vesselId}`)),
   release: (id) => call(http.post(`/berth/${id}/release`)),
+  move: (data) => call(http.post('/berth/move', data)),
   status: (id, status) => call(http.post(`/berth/${id}/status?status=${encodeURIComponent(status)}`)),
   remove: (id) => call(http.delete(`/berth/${id}`))
 }

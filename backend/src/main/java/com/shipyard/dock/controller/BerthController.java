@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.shipyard.dock.common.ApiResponse;
 import com.shipyard.dock.domain.Berth;
+import com.shipyard.dock.dto.BerthMoveRequest;
 import com.shipyard.dock.dto.BerthRequest;
 import com.shipyard.dock.service.BerthService;
 
@@ -62,6 +63,21 @@ public class BerthController {
     @PostMapping("/{id}/occupy")
     public ApiResponse<Berth> occupy(@PathVariable Long id, @RequestParam Long vesselId) {
         return ApiResponse.success("船舶已排入船台", service.occupy(id, vesselId));
+    }
+
+    /**
+     * 移泊（占位图上把在台船舶拖到另一座船台）：服务端原子切换——
+     * 船仍在预期原船台、目标仍可用且尺寸 / 承载校验通过时，同时腾空原船台并占用目标船台；
+     * 任一失败保留操作前的原船台占位，并留痕原船台、目标船台、操作时间与结果。
+     */
+    @PostMapping("/move")
+    public ApiResponse<Map<String, Object>> move(@RequestBody BerthMoveRequest request) {
+        Map<String, Object> result = service.move(request);
+        String message = String.valueOf(result.get("message"));
+        if (Boolean.TRUE.equals(result.get("success"))) {
+            return ApiResponse.success(message, result);
+        }
+        return ApiResponse.fail(message);
     }
 
     /** 出坞 / 让位（把船拖出格子） */

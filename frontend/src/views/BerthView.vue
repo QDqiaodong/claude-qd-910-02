@@ -9,12 +9,14 @@ const props = defineProps({
 })
 const emit = defineEmits(['openTab'])
 
-const board = ref({ berths: [], vessels: [], freeVessels: [], typeMeta: [], statusMeta: [] })
+const board = ref({ berths: [], vessels: [], freeVessels: [], typeMeta: [], statusMeta: [], moveLogs: [] })
 const loading = ref(false)
 const filterType = ref('ALL')
 const dragging = ref(null)
 const dragOverKey = ref('')
 const dialog = ref(false)
+/** 移泊提交中：期间禁止再次拖动 / 重复提交，避免并发请求互相覆盖 */
+const moving = ref(false)
 
 const form = ref({
   berthNo: '', berthName: '', berthType: 'SLIPWAY',
@@ -26,6 +28,7 @@ const shown = computed(() =>
   filterType.value === 'ALL' ? berths.value : berths.value.filter((b) => b.berthType === filterType.value)
 )
 const freeVessels = computed(() => board.value.freeVessels || [])
+const moveLogs = computed(() => board.value.moveLogs || [])
 /** 详情模式：从总览或列表点进来的船台分页 */
 const detailId = computed(() => Number(props.params?.berthId || 0))
 const detail = computed(() => berths.value.find((b) => b.id === detailId.value) || null)
@@ -42,7 +45,13 @@ function statusColor(status) {
   return 'var(--pass)'
 }
 
+/** 后端 ISO 时间 → 页面可读格式 */
+function fmtTime(value) {
+  return String(value || '').replace('T', ' ').slice(0, 19) || '-'
+}
+
 function onDragStart(vessel, berth) {
+  if (moving.value) return
   dragging.value = { vesselId: vessel.id, vesselName: vessel.vesselName, fromBerthId: berth ? berth.id : null }
 }
 
@@ -51,11 +60,17 @@ function onDragEnd() {
   dragOverKey.value = ''
 }
 
+/**
+ * 移泊：作为一次完整操作提交服务端原子切换（原船台腾空 + 目标船台占用同事务生效）。
+ * 不再先腾空再占用——目标被抢占 / 转检修 / 适配校验失败时，服务端保留原船台占位，
+ * 这里只需重取看板恢复真实布局并说明原因。
+ */
 async function dropToBerth(berth) {
   dragOverKey.value = ''
   const drag = dragging.value
   dragging.value = null
-  if (!drag) return
+  if (!drag || moving.value) return
+  if (drag.fromBerthId === berth.id) return
   if (berth.status === 'MAINTENANCE') {
     ElMessage.error(`${berth.berthNo} 检修中，不允许排入新船`)
     return
@@ -64,18 +79,20 @@ async function dropToBerth(berth) {
     ElMessage.error(`${berth.berthNo} 已占用，不允许再排入新船`)
     return
   }
-  loading.value = true
+  moving.value = true
   try {
-    if (drag.fromBerthId && drag.fromBerthId !== berth.id) {
-      await api.berth.release(drag.fromBerthId)
-    }
-    await api.berth.occupy(berth.id, drag.vesselId)
-    ElMessage.success(`${drag.vesselName} 已排入 ${berth.berthNo}`)
-    await load()
+    const result = await api.berth.move({
+      vesselId: drag.vesselId,
+      fromBerthId: drag.fromBerthId,
+      toBerthId: berth.id
+    })
+    ElMessage.success(result?.message || `${drag.vesselName} 已排入 ${berth.berthNo}`)
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
-    loading.value = false
+    // 成功：刷新总览 / 详情 / 待排区保持一致；失败：回退到服务端真实布局
+    await load()
+    moving.value = false
   }
 }
 
@@ -83,20 +100,20 @@ async function dropToYard() {
   dragOverKey.value = ''
   const drag = dragging.value
   dragging.value = null
-  if (!drag) return
+  if (!drag || moving.value) return
   if (!drag.fromBerthId) {
     ElMessage.info('这艘船本来就在待排区')
     return
   }
-  loading.value = true
+  moving.value = true
   try {
     await api.berth.release(drag.fromBerthId)
     ElMessage.success(`${drag.vesselName} 已出坞 / 让位`)
-    await load()
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
-    loading.value = false
+    await load()
+    moving.value = false
   }
 }
 
@@ -105,11 +122,23 @@ async function transfer(berth, status) {
   try {
     await api.berth.status(berth.id, status)
     ElMessage.success(`${berth.berthNo} 状态已更新`)
-    await load()
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
-    loading.value = false
+    // 并发下船台状态可能已被他人改变，无论成败都回退到服务端真实布局
+    await load()
+  }
+}
+
+async function releaseBerth(berth) {
+  loading.value = true
+  try {
+    await api.berth.release(berth.id)
+    ElMessage.success(`${berth.berthNo} 已腾空`)
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    await load()
   }
 }
 
@@ -175,7 +204,7 @@ onMounted(load)
           <div class="bd-actions">
             <el-button size="small" type="primary" plain @click="transfer(detail, 'MAINTENANCE')">转检修</el-button>
             <el-button size="small" type="primary" plain @click="transfer(detail, 'IDLE')">转空闲</el-button>
-            <el-button size="small" type="primary" plain v-if="detail.status === 'OCCUPIED'" @click="api.berth.release(detail.id).then(load)">出坞</el-button>
+            <el-button size="small" type="primary" plain v-if="detail.status === 'OCCUPIED'" @click="releaseBerth(detail)">出坞</el-button>
           </div>
         </div>
       </div>
@@ -218,7 +247,7 @@ onMounted(load)
               v-if="berth.vesselId"
               class="ship-block"
               :style="{ borderLeftColor: typeColor(berth.berthType) }"
-              draggable="true"
+              :draggable="!moving"
               @dragstart="onDragStart({ id: berth.vesselId, vesselName: berth.vesselName }, berth)"
               @dragend="onDragEnd"
             >
@@ -229,6 +258,31 @@ onMounted(load)
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- 移泊记录：原船台 → 目标船台 · 操作时间 · 结果，只追加可追溯 -->
+    <section class="panel" v-if="!detail">
+      <div class="panel-title">
+        移泊记录
+        <span class="view-tip">每一次移泊尝试都留痕：原船台 → 目标船台 · 操作时间 · 结果与原因</span>
+      </div>
+      <el-table :data="moveLogs" size="small" v-if="moveLogs.length">
+        <el-table-column prop="vesselName" label="船舶" width="110" />
+        <el-table-column label="原船台" width="100">
+          <template #default="{ row }">{{ row.fromBerthNo || '待排区' }}</template>
+        </el-table-column>
+        <el-table-column prop="toBerthNo" label="目标船台" width="100" />
+        <el-table-column label="操作时间" width="160">
+          <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="结果" width="80">
+          <template #default="{ row }">
+            <span class="tag-line"><i class="dot" :style="{ background: row.result === 'SUCCESS' ? 'var(--pass)' : 'var(--fail)' }"></i>{{ row.resultName }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="reason" label="说明" show-overflow-tooltip />
+      </el-table>
+      <div class="empty-tip" v-else>还没有移泊记录</div>
     </section>
 
     <!-- 待排船舶 -->
@@ -247,7 +301,7 @@ onMounted(load)
         <div
           v-for="vessel in freeVessels" :key="vessel.id"
           class="ship-block yard-block"
-          draggable="true"
+          :draggable="!moving"
           @dragstart="onDragStart(vessel, null)"
           @dragend="onDragEnd"
           @click="emit('openTab', { path: '/vessel', title: vessel.vesselNo + ' ' + vessel.vesselName, params: { vesselId: vessel.id } })"

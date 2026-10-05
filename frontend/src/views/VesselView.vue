@@ -66,6 +66,11 @@ function isPast(date) {
   return String(date) <= new Date().toISOString().slice(0, 10)
 }
 
+/** 后端 ISO 时间 → 页面可读格式 */
+function fmtTime(value) {
+  return String(value || '').replace('T', ' ').slice(0, 19) || '-'
+}
+
 function openVessel(vessel) {
   emit('openTab', {
     path: '/vessel',
@@ -184,6 +189,11 @@ onMounted(load)
           <div><span class="k">排水量</span><b>{{ detail.vessel.displacementT }} t</b></div>
           <div><span class="k">建造年份</span><b>{{ detail.vessel.buildYear }}</b></div>
           <div><span class="k">分段数</span><b>{{ detail.blocks.length }}</b></div>
+          <div>
+            <span class="k">当前船台</span>
+            <b v-if="detail.berth">{{ detail.berth.berthNo }} · {{ detail.berth.berthName }}</b>
+            <b v-else>未上台（待排区）</b>
+          </div>
         </div>
       </section>
 
@@ -220,6 +230,27 @@ onMounted(load)
           <el-table-column prop="statusName" label="状态" width="90" />
         </el-table>
         <div class="empty-tip" v-else>还没有分段</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          移泊记录
+          <span class="view-tip">本船每一次移泊的原船台 → 目标船台 · 操作时间 · 结果，与船台总览同源</span>
+        </div>
+        <el-table :data="detail.moveLogs || []" size="small" v-if="(detail.moveLogs || []).length">
+          <el-table-column label="原船台" width="100">
+            <template #default="{ row }">{{ row.fromBerthNo || '待排区' }}</template>
+          </el-table-column>
+          <el-table-column prop="toBerthNo" label="目标船台" width="100" />
+          <el-table-column label="操作时间" width="160">
+            <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
+          </el-table-column>
+          <el-table-column label="结果" width="80">
+            <template #default="{ row }">{{ row.resultName }}</template>
+          </el-table-column>
+          <el-table-column prop="reason" label="说明" show-overflow-tooltip />
+        </el-table>
+        <div class="empty-tip" v-else>还没有移泊记录</div>
       </section>
 
       <section class="panel">

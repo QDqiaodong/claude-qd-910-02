@@ -15,6 +15,7 @@ CREATE DATABASE IF NOT EXISTS shipyard_dock
 USE shipyard_dock;
 
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS berth_move_log;
 DROP TABLE IF EXISTS launch_clearance_check;
 DROP TABLE IF EXISTS launch_clearance;
 DROP TABLE IF EXISTS punch_item;
@@ -113,6 +114,27 @@ CREATE TABLE berth (
     location VARCHAR(32),
     note VARCHAR(64),
     created_at DATETIME
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------- 船舶移泊记录（只追加，责任追溯） ----------------
+-- 每一次移泊尝试（含待排区 ↔ 船台）都在此留痕：原船台、目标船台、操作时间、结果与失败原因。
+-- from_berth_* 为空表示从待排区排入；result：SUCCESS 成功 / FAIL 失败。
+CREATE TABLE berth_move_log (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    vessel_id BIGINT NOT NULL,
+    vessel_no VARCHAR(24),
+    vessel_name VARCHAR(48),
+    from_berth_id BIGINT,
+    from_berth_no VARCHAR(16),
+    to_berth_id BIGINT,
+    to_berth_no VARCHAR(16),
+    result VARCHAR(16) NOT NULL,
+    reason VARCHAR(255),
+    operator VARCHAR(32),
+    created_at DATETIME,
+    KEY idx_move_vessel (vessel_id),
+    KEY idx_move_from_berth (from_berth_id),
+    KEY idx_move_to_berth (to_berth_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------- 船体分段 ----------------

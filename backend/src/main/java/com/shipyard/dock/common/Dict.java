@@ -228,6 +228,14 @@ public final class Dict {
     /** 放行校验结论：READY 可放行 / BLOCKED 有阻塞 */
     public static final List<String> CLEARANCE_VERDICTS = List.of("READY", "BLOCKED");
 
+    // ---------------- 移泊结果 ----------------
+    /** SUCCESS 成功 / FAIL 失败（含被并发抢占、校验不通过、重复请求等） */
+    public static final List<String> MOVE_RESULTS = List.of("SUCCESS", "FAIL");
+
+    private static final Map<String, String> MOVE_RESULT_NAME = Map.of(
+            "SUCCESS", "成功",
+            "FAIL", "失败");
+
     private static final Map<String, String> CLEARANCE_VERDICT_NAME = Map.of(
             "READY", "可放行",
             "BLOCKED", "有阻塞");
@@ -456,6 +464,10 @@ public final class Dict {
 
     public static String clearanceVerdictName(String verdict) {
         return verdict == null ? "" : CLEARANCE_VERDICT_NAME.getOrDefault(verdict, verdict);
+    }
+
+    public static String moveResultName(String result) {
+        return result == null ? "" : MOVE_RESULT_NAME.getOrDefault(result, result);
     }
 
     public static String clearanceCheckTypeName(String checkType) {
