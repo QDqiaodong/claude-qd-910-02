@@ -14,11 +14,13 @@ import org.springframework.util.StringUtils;
 
 import com.shipyard.dock.common.BizException;
 import com.shipyard.dock.common.Dict;
+import com.shipyard.dock.domain.Berth;
 import com.shipyard.dock.domain.Block;
 import com.shipyard.dock.domain.Contract;
 import com.shipyard.dock.domain.Owner;
 import com.shipyard.dock.domain.Vessel;
 import com.shipyard.dock.dto.VesselRequest;
+import com.shipyard.dock.repository.BerthRepository;
 import com.shipyard.dock.repository.BlockRepository;
 import com.shipyard.dock.repository.ContractRepository;
 import com.shipyard.dock.repository.OwnerRepository;
@@ -36,13 +38,16 @@ public class VesselService {
     private final OwnerRepository ownerRepository;
     private final ContractRepository contractRepository;
     private final BlockRepository blockRepository;
+    private final BerthRepository berthRepository;
 
     public VesselService(VesselRepository vesselRepository, OwnerRepository ownerRepository,
-            ContractRepository contractRepository, BlockRepository blockRepository) {
+            ContractRepository contractRepository, BlockRepository blockRepository,
+            BerthRepository berthRepository) {
         this.vesselRepository = vesselRepository;
         this.ownerRepository = ownerRepository;
         this.contractRepository = contractRepository;
         this.blockRepository = blockRepository;
+        this.berthRepository = berthRepository;
     }
 
     public List<Vessel> list() {
@@ -144,11 +149,13 @@ public class VesselService {
         return data;
     }
 
-    /** 单船台账：船 + 合同 + 分段 */
+    /** 单船台账：船 + 当前船位 + 合同 + 分段（船位与船台总览 / 船台详情同源，保持一致） */
     public Map<String, Object> detail(Long id) {
         Vessel vessel = get(id);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("vessel", vessel);
+        Berth currentBerth = berthRepository.findFirstByVesselIdOrderByIdAsc(id).orElse(null);
+        data.put("currentBerth", currentBerth);
         data.put("contracts", contractRepository.findByVesselIdOrderByIdAsc(id));
         data.put("blocks", blockRepository.findByVesselIdOrderBySegSeqAsc(id));
         return data;

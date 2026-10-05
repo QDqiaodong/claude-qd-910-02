@@ -15,6 +15,7 @@ CREATE DATABASE IF NOT EXISTS shipyard_dock
 USE shipyard_dock;
 
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS berth_move_log;
 DROP TABLE IF EXISTS launch_clearance_check;
 DROP TABLE IF EXISTS launch_clearance;
 DROP TABLE IF EXISTS punch_item;
@@ -113,6 +114,37 @@ CREATE TABLE berth (
     location VARCHAR(32),
     note VARCHAR(64),
     created_at DATETIME
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------- 船台移泊操作日志（只追加，责任追溯） ----------------
+-- 平面占位图上把在台船舶从一个船台拖到另一个船台的每一次尝试都在此留痕：
+-- ① request_id 是前端为「一次拖动」生成的幂等键，UNIQUE 保证并发拖动同一艘船、
+--    两艘船互抢目标船台、重复提交 / 网络重试时，同一请求只产生一个有效结果；
+-- ② result：SUCCESS 移泊成功（原船台腾空、目标船台占用在同一事务内原子完成）/
+--    FAILED 校验失败（原船台占位原样保留，主事务回滚，日志以独立事务落库）；
+--    重复请求不新增记录，直接回传首次结果（响应标记 replay）；
+-- ③ from_* / to_* 记录操作前的原船台与目标船台，current_berth_id 记录处理后的真实船位，
+--    后到请求与前端失败提示都以它为准。
+CREATE TABLE berth_move_log (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    request_id VARCHAR(48) NOT NULL UNIQUE,
+    vessel_id BIGINT NOT NULL,
+    vessel_no VARCHAR(24),
+    vessel_name VARCHAR(48),
+    from_berth_id BIGINT,
+    from_berth_no VARCHAR(16),
+    to_berth_id BIGINT,
+    to_berth_no VARCHAR(16),
+    current_berth_id BIGINT,
+    current_berth_no VARCHAR(16),
+    result VARCHAR(16) NOT NULL,
+    fail_reason VARCHAR(255),
+    operator VARCHAR(32),
+    created_at DATETIME NOT NULL,
+    KEY idx_move_vessel (vessel_id),
+    KEY idx_move_from_berth (from_berth_id),
+    KEY idx_move_to_berth (to_berth_id),
+    KEY idx_move_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------- 船体分段 ----------------

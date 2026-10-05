@@ -2,6 +2,7 @@ package com.shipyard.dock.common;
 
 import java.util.stream.Collectors;
 
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -59,6 +60,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleOptimistic(ObjectOptimisticLockingFailureException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.fail(
                 "该任务的设备归属刚被检修、改派、吊次开始或恢复等操作更新，本次操作已整体回滚，请刷新后重试"));
+    }
+
+    /**
+     * 行级锁等待超时 / 死锁：并发移泊抢同一船台时本次事务被回滚（占位保持操作前状态），
+     * 提示刷新查看真实船位后重试，不允许任何一方覆盖已成功的移泊。
+     */
+    @ExceptionHandler(CannotAcquireLockException.class)
+    public ResponseEntity<ApiResponse<Void>> handleLock(CannotAcquireLockException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.fail(
+                "船台正被另一笔移泊占用，本次操作未生效，请刷新查看当前船位后重试"));
     }
 
     /**

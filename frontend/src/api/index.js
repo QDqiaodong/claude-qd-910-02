@@ -28,6 +28,11 @@ const berth = {
   update: (id, data) => call(http.put(`/berth/${id}`, data)),
   occupy: (id, vesselId) => call(http.post(`/berth/${id}/occupy?vesselId=${vesselId}`)),
   release: (id) => call(http.post(`/berth/${id}/release`)),
+  // 原子移泊：单请求完成并发校验 + 原船台腾空 / 目标船台占用；requestId 幂等
+  move: (data) => call(http.post('/berth/move', data)),
+  moveLogs: () => call(http.get('/berth/move-logs')),
+  berthMoveLogs: (id) => call(http.get(`/berth/${id}/move-logs`)),
+  vesselMoveLogs: (vesselId) => call(http.get(`/berth/move-logs?vesselId=${vesselId}`)),
   status: (id, status) => call(http.post(`/berth/${id}/status?status=${encodeURIComponent(status)}`)),
   remove: (id) => call(http.delete(`/berth/${id}`))
 }

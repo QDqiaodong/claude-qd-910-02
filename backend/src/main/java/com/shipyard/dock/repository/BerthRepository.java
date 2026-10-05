@@ -24,6 +24,9 @@ public interface BerthRepository extends JpaRepository<Berth, Long> {
     /** 某船当前占用的船台 */
     Optional<Berth> findFirstByVesselIdAndStatusOrderByIdAsc(Long vesselId, String status);
 
+    /** 某船当前占用的船台（不限状态，移泊失败后回传真实船位用），正常数据至多一条 */
+    Optional<Berth> findFirstByVesselIdOrderByIdAsc(Long vesselId);
+
     /**
      * 确认放行释放船台时的行级悲观锁：与船台视图里的出坞 / 排船操作互斥，
      * 避免释放动作与手工改船位交叉导致状态不一致。

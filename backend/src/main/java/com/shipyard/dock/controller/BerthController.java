@@ -15,6 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.shipyard.dock.common.ApiResponse;
 import com.shipyard.dock.domain.Berth;
+import com.shipyard.dock.domain.BerthMoveLog;
+import com.shipyard.dock.dto.BerthMoveRequest;
+import com.shipyard.dock.dto.BerthMoveResult;
 import com.shipyard.dock.dto.BerthRequest;
 import com.shipyard.dock.service.BerthService;
 
@@ -68,6 +71,32 @@ public class BerthController {
     @PostMapping("/{id}/release")
     public ApiResponse<Berth> release(@PathVariable Long id) {
         return ApiResponse.success("船台已腾空", service.release(id));
+    }
+
+    /**
+     * 移泊（把在台船舶拖到另一座空闲船台）：后端单事务完成并发校验与原子切换，
+     * 失败整体回滚、原船台占位保留；requestId 幂等，重复 / 重试请求只回传首次结果与真实船位。
+     */
+    @PostMapping("/move")
+    public ApiResponse<BerthMoveResult> move(@RequestBody BerthMoveRequest request) {
+        BerthMoveResult result = service.move(request);
+        if (result.isReplay()) {
+            return ApiResponse.success(result.getMessage(), result);
+        }
+        return ApiResponse.success("移泊成功：" + result.getVesselName() + " 已由 "
+                + result.getFromBerthNo() + " 移至 " + result.getCurrentBerthNo(), result);
+    }
+
+    /** 移泊操作日志（船台总览追溯：原船台 / 目标船台 / 操作时间 / 结果）；可按船舶过滤 */
+    @GetMapping("/move-logs")
+    public ApiResponse<List<BerthMoveLog>> moveLogs(@RequestParam(required = false) Long vesselId) {
+        return ApiResponse.success(vesselId == null ? service.moveLogs() : service.moveLogsOfVessel(vesselId));
+    }
+
+    /** 单座船台相关的移泊日志（原船台或目标船台） */
+    @GetMapping("/{id}/move-logs")
+    public ApiResponse<List<BerthMoveLog>> berthMoveLogs(@PathVariable Long id) {
+        return ApiResponse.success(service.moveLogsOfBerth(id));
     }
 
     /** 状态流转：空闲 → 占用 → 检修 → 空闲 */

@@ -12,6 +12,8 @@ const emit = defineEmits(['openTab'])
 const board = ref({ vessels: [], owners: [], contracts: [], typeMeta: [], types: [] })
 const detail = ref(null)
 const clearances = ref([])
+/** 本船移泊记录：当前船位与船台总览 / 船台详情同源可追溯 */
+const moveLogs = ref([])
 const loading = ref(false)
 const dialog = ref(false)
 
@@ -132,8 +134,12 @@ async function loadClearances() {
   clearances.value = vesselId.value ? await api.launch.ofVessel(vesselId.value) : []
 }
 
+async function loadMoveLogs() {
+  moveLogs.value = vesselId.value ? await api.berth.vesselMoveLogs(vesselId.value) : []
+}
+
 async function reload() {
-  await Promise.all([loadBoard(), loadDetail(), loadClearances()])
+  await Promise.all([loadBoard(), loadDetail(), loadClearances(), loadMoveLogs()])
 }
 
 async function load() {
@@ -151,9 +157,11 @@ watch(vesselId, () => {
   if (vesselId.value) {
     loadDetail().catch((e) => ElMessage.error(e.message))
     loadClearances().catch((e) => ElMessage.error(e.message))
+    loadMoveLogs().catch((e) => ElMessage.error(e.message))
   } else {
     detail.value = null
     clearances.value = []
+    moveLogs.value = []
   }
 })
 
@@ -183,6 +191,14 @@ onMounted(load)
           <div><span class="k">总吨</span><b>{{ detail.vessel.grossTonnage }}</b></div>
           <div><span class="k">排水量</span><b>{{ detail.vessel.displacementT }} t</b></div>
           <div><span class="k">建造年份</span><b>{{ detail.vessel.buildYear }}</b></div>
+          <div>
+            <span class="k">当前船位</span>
+            <b v-if="detail.currentBerth">
+              {{ detail.currentBerth.berthNo }} {{ detail.currentBerth.berthName }}
+              <span class="berth-state">（{{ detail.currentBerth.statusName }}）</span>
+            </b>
+            <b v-else class="berth-state">待排区（未上台）</b>
+          </div>
           <div><span class="k">分段数</span><b>{{ detail.blocks.length }}</b></div>
         </div>
       </section>
@@ -254,6 +270,39 @@ onMounted(load)
           </el-table-column>
         </el-table>
         <div class="empty-tip" v-else>还没有放行单，可前往放行台生成</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          移泊记录
+          <span class="view-tip">本船在船台平面占位图上的每一次移泊尝试（成功 / 失败）都在此留痕，船位与船台总览一致</span>
+        </div>
+        <el-table :data="moveLogs" size="small" v-if="moveLogs.length">
+          <el-table-column label="原船台" width="100">
+            <template #default="{ row }">{{ row.fromBerthNo || '待排区' }}</template>
+          </el-table-column>
+          <el-table-column label="目标船台" width="100">
+            <template #default="{ row }">{{ row.toBerthNo || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="结果" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.result === 'SUCCESS' ? 'success' : (row.result === 'FAILED' ? 'danger' : 'info')">
+                {{ row.result === 'SUCCESS' ? '成功' : (row.result === 'FAILED' ? '失败' : '重复请求') }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作后真实船位" width="130">
+            <template #default="{ row }">{{ row.currentBerthNo || '待排区' }}</template>
+          </el-table-column>
+          <el-table-column label="说明" min-width="200">
+            <template #default="{ row }">
+              <span v-if="row.result === 'SUCCESS'" style="color:var(--pass)">原船台腾空与目标船台占用原子完成</span>
+              <span v-else style="color:var(--fail)">{{ row.failReason }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="操作时间" width="170" />
+        </el-table>
+        <div class="empty-tip" v-else>本船还没有移泊记录</div>
       </section>
     </div>
 
@@ -407,6 +456,7 @@ onMounted(load)
 .vs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 14px; }
 .vs-grid .k { font-size: 11px; color: var(--ink-dim); display: block; }
 .vs-grid b { font-size: 13px; }
+.berth-state { font-weight: 600; font-size: 12px; color: var(--ink-dim); }
 
 .link { color: var(--primary-deep); font-weight: 700; text-decoration: underline dotted; cursor: pointer; }
 </style>
